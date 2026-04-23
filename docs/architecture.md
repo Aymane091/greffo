@@ -709,5 +709,5 @@ Ces points sont notés ici pour qu'on se souvienne qu'ils ne sont pas fixés. À
 
 ---
 
-**Dernière mise à jour** : [date]
-**Auteur principal** : [ton nom]
+**Dernière mise à jour** : 22/04/2026
+**Auteur principal** : Aymane ABCHIR

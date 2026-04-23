@@ -6,7 +6,7 @@
 
 ## 1. Contexte projet
 
-**Nom du produit** : [À définir — ex: Plaida, Transcrilex, Audiencia]
+**Nom du produit** : Greffo
 
 **Type** : SaaS B2B de transcription audio spécialisé pour les professionnels du droit (avocats, notaires, commissaires de justice).
 
@@ -337,12 +337,12 @@ Avant chaque PR mergé en main :
 
 ## 13. Contacts / escalade
 
-- **DPO / RGPD** : [à définir]
-- **Avocat conseil** : [à définir]
+- **DPO / RGPD** : TODO
+- **Avocat conseil** : TODO
 - **Hébergeur (Scaleway)** : support.scaleway.com
 - **Paiements (Stripe)** : support@stripe.com
 
 ---
 
-**Dernière mise à jour** : [date de la dernière modif]
-**Responsable du projet** : [ton nom]
+**Dernière mise à jour** : 22/04/2026
+**Responsable du projet** : Aymane ABCHIR
