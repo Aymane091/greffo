@@ -25,7 +25,7 @@
 ## 2. Stack technique
 
 ### Frontend
-- **Framework** : Next.js 15 (App Router) + React 19
+- **Framework** : Next.js 16 (App Router) + React 19
 - **Langage** : TypeScript (strict mode)
 - **Styling** : Tailwind CSS v4 + shadcn/ui
 - **Forms** : React Hook Form + Zod validation
