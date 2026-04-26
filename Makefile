@@ -1,7 +1,7 @@
 .PHONY: help infra-up infra-down dev-front dev-api dev-worker \
         test-front test-e2e test-back test-security \
         lint format migrate-new migrate-up migrate-down \
-        build-front build-api
+        build-front build-api test-db-create
 
 API_DIR = apps/api
 
@@ -28,6 +28,11 @@ dev-worker: ## Worker ARQ (transcription)
 	cd $(API_DIR) && uv run arq src.workers.WorkerSettings
 
 ## — Tests ———————————————————————————————————————————————
+
+test-db-create: ## Crée la DB de test greffo_test (à lancer une seule fois)
+	createdb -O greffo greffo_test 2>/dev/null || true
+	cd $(API_DIR) && TEST_DATABASE_URL=postgresql+asyncpg://greffo@localhost:5432/greffo_test \
+		uv run alembic upgrade head
 
 test-front: ## Tests unitaires front (Vitest)
 	pnpm --filter web test

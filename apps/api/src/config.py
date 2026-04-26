@@ -6,12 +6,14 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     database_url: str = "postgresql+asyncpg://greffo:greffo_local@localhost:5432/greffo_dev"
     redis_url: str = "redis://localhost:6379/0"
     environment: str = "local"
     debug: bool = False
+    dev_mode: bool = True
     cors_origins: list[str] = ["http://localhost:3000"]
 
 
