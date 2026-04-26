@@ -12,6 +12,7 @@ from src.db import get_db
 from src.models.organization import Organization
 
 _org_id_ctx: ContextVar[str | None] = ContextVar("org_id", default=None)
+_user_id_ctx: ContextVar[str | None] = ContextVar("user_id", default=None)
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -20,12 +21,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        org_id = request.headers.get("x-org-id")
-        token = _org_id_ctx.set(org_id)
+        org_token = _org_id_ctx.set(request.headers.get("x-org-id"))
+        user_token = _user_id_ctx.set(request.headers.get("x-user-id"))
         try:
             return await call_next(request)
         finally:
-            _org_id_ctx.reset(token)
+            _org_id_ctx.reset(org_token)
+            _user_id_ctx.reset(user_token)
 
 
 async def get_current_org(db: AsyncSession = Depends(get_db)) -> Organization:

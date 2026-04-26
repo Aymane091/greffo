@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.auth.tenant import TenantMiddleware
 from src.config import settings
-from src.routes import health, organizations
+from src.routes import cases, health, organizations, transcriptions
 
 
 @asynccontextmanager
@@ -34,3 +34,5 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(organizations.router, prefix="/api/v1")
+app.include_router(cases.router, prefix="/api/v1")
+app.include_router(transcriptions.router, prefix="/api/v1")
