@@ -34,3 +34,8 @@ class TranscriptionRead(BaseModel):
 class TranscriptionUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=200)
     case_id: str | None = None
+
+
+class UploadUrlResponse(BaseModel):
+    upload_url: str
+    expires_at: datetime

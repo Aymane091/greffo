@@ -16,5 +16,9 @@ class Settings(BaseSettings):
     dev_mode: bool = True
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    storage_backend: str = "local"
+    storage_local_path: str = "./storage"
+    storage_secret: str = "change-me-in-production-use-32-chars-min"
+
 
 settings = Settings()

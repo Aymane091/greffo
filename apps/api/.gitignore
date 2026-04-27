@@ -1,0 +1,3 @@
+# Local audio storage — DEV ONLY. Never commit real audio or transcription files.
+storage/
+!storage/.gitkeep

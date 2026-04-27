@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.tenant import get_current_org
@@ -8,13 +8,16 @@ from src.auth.user import get_current_user_id
 from src.db import get_db
 from src.models.organization import Organization
 from src.models.transcription import Transcription
+from src.redis import get_redis
 from src.schemas.transcription import (
     TranscriptionCreate,
     TranscriptionRead,
     TranscriptionUpdate,
+    UploadUrlResponse,
 )
 from src.services import transcription_service
 from src.services.audit import log_action
+from src.services.storage_token import generate_upload_token
 from src.utils.pagination import Page
 
 router = APIRouter(prefix="/transcriptions", tags=["transcriptions"])
@@ -88,3 +91,47 @@ async def delete_transcription(
     await transcription_service.soft_delete_transcription(db, tr)
     await db.commit()
     await log_action("DELETE", "transcription", tr_id_for_log, org.id)
+
+
+@router.post("/{tr_id}/upload-url", response_model=UploadUrlResponse)
+async def get_upload_url(
+    tr_id: str,
+    request: Request,
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+) -> UploadUrlResponse:
+    tr = await transcription_service.get_transcription_or_404(db, tr_id, org.id)
+    if tr.audio_s3_key is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="audio_already_uploaded"
+        )
+    token, expires_at = generate_upload_token(tr.id, org.id)
+    base_url = str(request.base_url).rstrip("/")
+    upload_url = f"{base_url}/api/v1/storage/upload/{token}"
+    return UploadUrlResponse(upload_url=upload_url, expires_at=expires_at)
+
+
+@router.post("/{tr_id}/confirm-upload", response_model=TranscriptionRead)
+async def confirm_upload(
+    tr_id: str,
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+    redis: object = Depends(get_redis),
+) -> Transcription:
+    # TODO(ticket-cleanup): job ARQ planifié toutes les heures qui supprime
+    # les fichiers du storage dont aucune transcription ne référence audio_s3_key
+    # (uploads où confirm-upload n'a jamais été appelé après upload réussi)
+    tr = await transcription_service.get_transcription_or_404(db, tr_id, org.id)
+
+    if tr.audio_s3_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="audio_not_uploaded"
+        )
+
+    tr.status = "queued"
+    await db.commit()
+    await log_action("QUEUED", "transcription", tr.id, org.id)
+
+    await redis.enqueue_job("process_transcription", transcription_id=tr.id)  # type: ignore[union-attr]
+
+    return tr
