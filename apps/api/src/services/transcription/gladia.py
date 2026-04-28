@@ -75,6 +75,10 @@ class GladiaProvider(TranscriptionProvider):
                     f"Gladia authentication failed (HTTP {resp.status_code})",
                 )
 
+            if resp.status_code == 400:
+                body = resp.text[:300]
+                raise TranscriptionError("AUDIO_INVALID", f"Gladia bad request: {body}")
+
             if resp.status_code == 429:
                 logger.warning("Gladia rate limit (attempt %d)", attempt + 1)
                 last_err = TranscriptionError("RATE_LIMIT", "Rate limited by Gladia")
@@ -104,10 +108,15 @@ class GladiaProvider(TranscriptionProvider):
             files={"audio": ("audio", audio_bytes, mime)},
         )
         data = resp.json()
-        audio_url: str = data["audio_url"]
+        logger.debug("Gladia upload raw shape: status=%d keys=%s", resp.status_code, list(data.keys()))
+        audio_url = data.get("audio_url")
+        if not audio_url:
+            raise TranscriptionError(
+                "AUDIO_INVALID", f"Gladia upload response missing audio_url: {list(data.keys())}"
+            )
         duration_s = float(data.get("audio_metadata", {}).get("audio_duration") or 0)
         logger.info("Gladia upload done: duration=%.1fs", duration_s)
-        return audio_url, duration_s
+        return str(audio_url), duration_s
 
     async def _start_job(
         self, client: httpx.AsyncClient, audio_url: str, language: str
@@ -121,12 +130,21 @@ class GladiaProvider(TranscriptionProvider):
             json={
                 "audio_url": audio_url,
                 "diarization": True,
-                "language_config": {"language": language},
+                "language_config": {"languages": [language]},
             },
         )
-        job_id: str = resp.json()["id"]
+        data = resp.json()
+        logger.debug(
+            "Gladia pre-recorded raw shape: status=%d keys=%s", resp.status_code, list(data.keys())
+        )
+        job_id = data.get("id") or data.get("result_id") or data.get("job_id")
+        if not job_id:
+            raise TranscriptionError(
+                "AUDIO_INVALID",
+                f"Gladia pre-recorded response missing job id: {list(data.keys())}",
+            )
         logger.info("Gladia job started: id=%s", job_id)
-        return job_id
+        return str(job_id)
 
     async def _poll(
         self, client: httpx.AsyncClient, job_id: str, timeout_s: float
