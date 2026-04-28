@@ -299,10 +299,14 @@ async def test_failed_transcription(
     # Create the dummy audio file so the exists() check passes
     await tmp_storage.upload("audio/fake-fail.wav", b"fake-wav-bytes", "audio/wav")
 
-    # Make the stub data invalid to trigger an exception during segment creation
-    import src.workers as workers_module
+    # Inject a provider that raises a TranscriptionError to trigger the failure path
+    from src.services.transcription import TranscriptionError, TranscriptionProvider
 
-    monkeypatch.setattr(workers_module, "_STUB_SEGMENTS", None)
+    class _FailProvider(TranscriptionProvider):
+        async def transcribe(self, audio_bytes: bytes, language: str):
+            raise TranscriptionError("AUDIO_INVALID", "simulated provider failure")
+
+    monkeypatch.setattr("src.workers.get_provider", lambda: _FailProvider())
 
     await _run_pipeline(db_session, tmp_storage, saved_tr_id)
 
@@ -310,7 +314,7 @@ async def test_failed_transcription(
     result = await db_session.execute(select(Transcription).where(Transcription.id == saved_tr_id))
     tr_final = result.scalar_one()
     assert tr_final.status == "failed"
-    assert tr_final.error_code == "TypeError"
+    assert tr_final.error_code == "AUDIO_INVALID"
 
 
 # ---------------------------------------------------------------------------

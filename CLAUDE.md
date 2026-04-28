@@ -197,29 +197,49 @@ Ces règles sont **NON NÉGOCIABLES**. Tu dois refuser de coder quelque chose qu
 
 ## 7. Pipeline de transcription (cœur technique)
 
-Flow attendu :
+### Provider MVP : Gladia (API SaaS, UE)
+
+**`TRANSCRIPTION_PROVIDER=gladia`** — provider actif en staging et production.  
+**`TRANSCRIPTION_PROVIDER=stub`** — provider par défaut en dev et CI (pas de clé requise).  
+Voir ADR `docs/decisions/0002-gladia-vs-self-hosted-whisper.md` pour la justification.  
+faster-whisper self-hosted est prévu en **phase 2** si les benchmarks qualité ou les coûts le justifient.
+
+### Abstraction provider
+
+`TranscriptionProvider` (ABC dans `src/services/transcription/__init__.py`) expose :
+```python
+async def transcribe(audio_bytes: bytes, language: str) -> TranscriptionResult
+```
+`TranscriptionResult` contient `segments[start_s, end_s, speaker, text, confidence]`, `language_detected`, `duration_s`.  
+`get_provider()` lit `settings.transcription_provider` et retourne le bon provider.
+
+### Flow pipeline (MVP Gladia)
 
 ```
 Upload audio → validation MIME/durée → stockage S3 chiffré
-            → enqueue job Redis
-            → worker GPU:
-                1. Télécharge audio
-                2. VAD (Silero) → découpe silences
-                3. Diarization (pyannote)
-                4. Transcription (faster-whisper large-v3)
-                5. Alignement (WhisperX)
-                6. Fusion diarization + transcription → JSON structuré
-                7. Sauvegarde DB (chiffré) + S3 (JSON + texte)
-                8. Notification user (email + webhook WS front)
+            → enqueue job Redis (ARQ)
+            → worker:
+                1. Télécharge audio depuis S3 → bytes
+                2. provider.transcribe(bytes, language)  # Gladia ou Stub
+                   ├── Upload vers Gladia /v2/upload
+                   ├── POST /v2/pre-recorded (diarization=true, language_config)
+                   └── Polling /v2/pre-recorded/{id} jusqu'à status=done
+                3. Mapping utterances → TranscriptionSegment (DELETE+INSERT atomique)
+                4. Update Transcription : status=done, audio_duration_s, language
+                5. Notification user (email + webhook WS front) [à implémenter]
 ```
 
+### Normalisation des locuteurs
+Les IDs Gladia (`speaker_1`, `speaker_2`, …) sont normalisés en `SPEAKER_00`, `SPEAKER_01`, … (zero-padded, ordre d'apparition). `null` → `SPEAKER_00`.
+
 ### Règles du pipeline
-- **Idempotent** : un job rejoué produit le même résultat
-- **Reprise sur erreur** : états `queued → processing → transcribing → diarizing → aligning → done | failed`
-- **Pas de retry automatique infini** : max 3 retries, puis `failed` avec raison
-- **Timeout** : 2h max par fichier (au-delà = fichier probablement corrompu)
+- **Idempotent** : DELETE segments existants avant INSERT — un job rejoué produit le même résultat
+- **Reprise sur erreur** : états `queued → processing → done | failed`
+- **Retry Gladia** : 3 retries max avec backoff exponentiel 1s/4s/16s sur 429, 5xx et erreurs réseau
+- **Timeout polling adaptatif** : 10 min pour audio < 30 min ; `TRANSCRIPTION_TIMEOUT_SECONDS` (défaut 30 min) sinon
 - **Size max** : 500 MB / 6 heures d'audio
 - **Formats acceptés** : mp3, wav, m4a, ogg, opus, flac, mp4 (audio track extract)
+- **Logs** : jamais le contenu transcrit — uniquement transitions d'état, durées, error_code
 
 ---
 

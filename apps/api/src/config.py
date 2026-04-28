@@ -1,3 +1,6 @@
+from typing import Literal
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +22,20 @@ class Settings(BaseSettings):
     storage_backend: str = "local"
     storage_local_path: str = "./storage"
     storage_secret: str = "change-me-in-production-use-32-chars-min"
+
+    # Transcription provider
+    transcription_provider: Literal["stub", "gladia"] = "stub"
+    gladia_api_key: str | None = None
+    gladia_base_url: str = "https://api.gladia.io"
+    transcription_timeout_seconds: int = 1800
+
+    @model_validator(mode="after")
+    def _require_gladia_key(self) -> "Settings":
+        if self.transcription_provider == "gladia" and not (self.gladia_api_key or "").strip():
+            raise ValueError(
+                "GLADIA_API_KEY must be set (non-empty) when TRANSCRIPTION_PROVIDER=gladia"
+            )
+        return self
 
 
 settings = Settings()

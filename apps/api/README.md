@@ -75,3 +75,38 @@ uv run alembic downgrade -1
 ```bash
 uv run ruff check . && uv run ruff format .
 ```
+
+## Configuration des providers de transcription
+
+Le provider est sélectionné via la variable `TRANSCRIPTION_PROVIDER` (défaut : `stub`).
+
+### Mode stub (dev / CI)
+
+Aucune clé requise. Renvoie 10 segments de dialogue juridique fictifs instantanément.
+
+```env
+TRANSCRIPTION_PROVIDER=stub
+```
+
+### Mode Gladia (staging / prod)
+
+```env
+TRANSCRIPTION_PROVIDER=gladia
+GLADIA_API_KEY=votre_clé_gladia
+GLADIA_BASE_URL=https://api.gladia.io   # optionnel
+TRANSCRIPTION_TIMEOUT_SECONDS=1800      # optionnel, défaut 30 min
+```
+
+L'application refuse de démarrer si `TRANSCRIPTION_PROVIDER=gladia` et `GLADIA_API_KEY` est absent ou vide (validation Pydantic au boot).
+
+**Timeout adaptatif** : pour les audios < 30 min, le timeout de polling est réduit à 10 min. Au-delà, il utilise `TRANSCRIPTION_TIMEOUT_SECONDS`.
+
+### Ajouter un provider custom
+
+Implémenter `TranscriptionProvider` (ABC dans `src/services/transcription/__init__.py`) et enregistrer le nouveau nom dans `get_provider()`.
+
+```python
+class MonProvider(TranscriptionProvider):
+    async def transcribe(self, audio_bytes: bytes, language: str) -> TranscriptionResult:
+        ...
+```

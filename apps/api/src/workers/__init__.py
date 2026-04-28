@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -12,6 +11,7 @@ from src.db import AsyncSessionLocal
 from src.models.transcription import Transcription
 from src.models.transcription_segment import TranscriptionSegment
 from src.services.audit import log_action
+from src.services.transcription import TranscriptionError, get_provider
 from src.storage import StorageBackend, init_storage
 
 logger = logging.getLogger("greffo.worker")
@@ -19,19 +19,6 @@ logger = logging.getLogger("greffo.worker")
 # TODO(ticket-cleanup): Add a scheduled ARQ job that runs every hour to delete files
 # from storage whose key is not referenced by any transcription.audio_s3_key.
 # These are orphaned uploads where confirm-upload was never called after a successful PUT.
-
-_STUB_SEGMENTS: list[tuple[float, float, str, str, float]] = [
-    (0.0, 3.5, "SPEAKER_00", "Monsieur le Président, la séance est ouverte.", 0.92),
-    (4.0, 7.2, "SPEAKER_01", "Maître, pouvez-vous présenter votre client ?", 0.89),
-    (7.8, 12.1, "SPEAKER_00", "Bien entendu. Mon client, Monsieur Martin, est présent à l'audience.", 0.94),
-    (12.5, 16.0, "SPEAKER_01", "Monsieur Martin, vous êtes bien prévenu des faits qui vous sont reprochés ?", 0.91),
-    (16.8, 19.3, "SPEAKER_00", "Oui, Monsieur le Président. Je reconnais les faits.", 0.88),
-    (20.0, 24.5, "SPEAKER_01", "Maître, quels sont les éléments à charge que vous souhaitez contester ?", 0.93),
-    (25.0, 30.2, "SPEAKER_00", "Nous contestons la valeur probante du rapport d'expertise versé au dossier.", 0.87),
-    (31.0, 35.8, "SPEAKER_01", "L'expert sera entendu à l'audience de renvoi. Avez-vous des observations ?", 0.90),
-    (36.5, 41.0, "SPEAKER_00", "Nous demandons le renvoi de l'affaire pour permettre une contre-expertise.", 0.85),
-    (42.0, 45.5, "SPEAKER_01", "La cour se retire pour délibérer. L'audience reprend dans trente minutes.", 0.96),
-]
 
 
 async def _run_pipeline(
@@ -52,42 +39,61 @@ async def _run_pipeline(
         await db.commit()
         await log_action("PROCESSING", "transcription", tr.id, tr.organization_id)
 
-        # Sanity-check the audio file exists
-        if tr.audio_s3_key and not await storage.exists(tr.audio_s3_key):
+        if not tr.audio_s3_key:
+            raise ValueError("No audio key — confirm-upload not called")
+        if not await storage.exists(tr.audio_s3_key):
             raise FileNotFoundError(f"Audio file missing from storage: {tr.audio_s3_key}")
 
-        # Idempotence: remove any segments from a previous (failed) run
-        await db.execute(
-            delete(TranscriptionSegment).where(
-                TranscriptionSegment.transcription_id == tr.id
-            )
-        )
+        audio_bytes = await storage.download(tr.audio_s3_key)
+        provider = get_provider()
+        result_data = await provider.transcribe(audio_bytes, tr.language or "fr")
 
-        for i, (start_s, end_s, speaker, text, confidence) in enumerate(_STUB_SEGMENTS):
-            db.add(
-                TranscriptionSegment(
-                    transcription_id=tr.id,
-                    organization_id=tr.organization_id,
-                    segment_index=i,
-                    speaker=speaker,
-                    start_s=start_s,
-                    end_s=end_s,
-                    text=text,
-                    confidence=confidence,
+        # DELETE + INSERT + status update in one atomic transaction
+        async with db.begin():
+            await db.execute(
+                delete(TranscriptionSegment).where(
+                    TranscriptionSegment.transcription_id == tr.id
                 )
             )
+            for i, seg in enumerate(result_data.segments):
+                db.add(
+                    TranscriptionSegment(
+                        transcription_id=tr.id,
+                        organization_id=tr.organization_id,
+                        segment_index=i,
+                        speaker=seg.speaker,
+                        start_s=seg.start_s,
+                        end_s=seg.end_s,
+                        text=seg.text,
+                        confidence=seg.confidence,
+                    )
+                )
+            tr.status = "done"
+            tr.progress_pct = 100
+            tr.processing_ended_at = datetime.now(timezone.utc)
+            tr.audio_duration_s = int(result_data.duration_s)
+            tr.language = result_data.language_detected
 
-        tr.status = "done"
-        tr.progress_pct = 100
-        tr.processing_ended_at = datetime.now(timezone.utc)
-        await db.commit()
         await log_action("DONE", "transcription", tr.id, tr.organization_id)
-
         logger.info(
-            "Pipeline done: transcription=%s duration=%.1fs",
+            "Pipeline done: transcription=%s segments=%d duration=%.1fs",
             tr.id,
-            (tr.processing_ended_at - tr.processing_started_at).total_seconds(),
+            len(result_data.segments),
+            result_data.duration_s,
         )
+
+    except TranscriptionError as exc:
+        logger.error(
+            "Transcription error for %s: error_code=%s", transcription_id, exc.error_code
+        )
+        try:
+            tr.status = "failed"
+            tr.error_code = exc.error_code
+            tr.error_message = exc.message[:500]
+            await db.commit()
+            await log_action("FAILED", "transcription", tr.id, tr.organization_id)
+        except Exception:
+            logger.exception("Could not persist failure state for %s", transcription_id)
 
     except Exception as exc:
         logger.exception("Pipeline failed for transcription %s", transcription_id)
@@ -103,8 +109,6 @@ async def _run_pipeline(
 
 async def process_transcription(ctx: dict, transcription_id: str) -> None:
     """ARQ job entry point. Opens its own DB session."""
-    # Simulate processing time (replaced by real pipeline in ticket 11)
-    await asyncio.sleep(5)
     storage: StorageBackend = ctx.get("storage") or init_storage()
     async with AsyncSessionLocal() as db:
         await _run_pipeline(db, storage, transcription_id)
