@@ -1,10 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import Home from '@/app/page'
+import VerifyPage from '@/app/auth/verify/page'
 
-describe('Home page', () => {
-  it('affiche le nom du produit', () => {
-    render(<Home />)
-    expect(screen.getByRole('heading', { name: /greffo/i })).toBeDefined()
+describe('Auth verify page', () => {
+  it('affiche le message de vérification', () => {
+    render(<VerifyPage />)
+    expect(screen.getByRole('heading', { name: /vérifiez/i })).toBeDefined()
   })
 })

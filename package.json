@@ -3,12 +3,18 @@
   "private": true,
   "version": "0.0.1",
   "packageManager": "pnpm@9.15.0",
-"scripts": {
-    "dev":      "pnpm --filter web dev",
-    "build":    "pnpm --filter web build",
-    "test":     "pnpm --filter web test",
-    "test:e2e": "pnpm --filter web test:e2e",
-    "lint":     "pnpm -r lint",
-    "format":   "pnpm -r format"
+  "scripts": {
+    "dev":        "concurrently -n api,worker,web -c blue,yellow,green \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
+    "dev:web":    "pnpm --filter web dev",
+    "dev:api":    "cd apps/api && /Users/aymaneabchir/.local/bin/uv run uvicorn src.main:app --reload --port 8000",
+    "dev:worker": "cd apps/api && /Users/aymaneabchir/.local/bin/uv run arq src.workers.WorkerSettings",
+    "build":      "pnpm --filter web build",
+    "test":       "pnpm --filter web test",
+    "test:e2e":   "pnpm --filter web test:e2e",
+    "lint":       "pnpm -r lint",
+    "format":     "pnpm -r format"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }
