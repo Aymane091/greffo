@@ -49,6 +49,7 @@ export const config: NextAuthConfig = {
   pages: {
     signIn: '/login',
     verifyRequest: '/auth/verify',
+    error: '/login',
   },
   callbacks: {
     async jwt({ token, user }) {
