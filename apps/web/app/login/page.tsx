@@ -1,16 +1,4 @@
-'use server'
-
-import { signIn } from '@/lib/auth'
-
-async function requestMagicLink(formData: FormData) {
-  'use server'
-  const email = formData.get('email')?.toString().trim()
-  if (!email) return
-
-  // signIn with email provider redirects to /auth/verify automatically.
-  // For unknown emails, sendVerificationRequest returns silently — same UX.
-  await signIn('email', { email, redirectTo: '/auth/verify' })
-}
+import { loginAction } from './actions'
 
 export default function LoginPage() {
   return (
@@ -23,7 +11,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <form action={requestMagicLink} className="space-y-4">
+        <form action={loginAction} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Adresse e-mail

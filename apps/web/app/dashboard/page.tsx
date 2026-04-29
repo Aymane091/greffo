@@ -1,10 +1,6 @@
 import { redirect } from 'next/navigation'
-import { auth, signOut } from '@/lib/auth'
-
-async function handleSignOut() {
-  'use server'
-  await signOut({ redirectTo: '/login' })
-}
+import { auth } from '@/lib/auth'
+import { signOutAction } from './actions'
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -14,7 +10,7 @@ export default async function DashboardPage() {
     <main className="flex flex-1 flex-col gap-8 px-8 py-12">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Tableau de bord</h1>
-        <form action={handleSignOut}>
+        <form action={signOutAction}>
           <button
             type="submit"
             className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted transition-colors"
