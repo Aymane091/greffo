@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { signOutAction } from './actions'
+import { TestApiButton } from './test-api-button'
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -25,6 +26,13 @@ export default async function DashboardPage() {
         <InfoCard label="Organisation" value={session.organizationId || '—'} />
         <InfoCard label="Rôle" value={session.role || '—'} />
       </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          Connectivité API
+        </h2>
+        <TestApiButton />
+      </section>
     </main>
   )
 }
