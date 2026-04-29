@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { NextResponse } from 'next/server'
 
-export default auth((req) => {
+const handler = auth((req) => {
   const { pathname } = req.nextUrl
 
   if (pathname.startsWith('/dashboard') && !req.auth) {
@@ -12,6 +12,9 @@ export default auth((req) => {
 
   return NextResponse.next()
 })
+
+export const proxy = handler
+export default handler
 
 export const config = {
   matcher: ['/dashboard/:path*'],
