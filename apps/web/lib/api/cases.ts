@@ -32,11 +32,13 @@ export type CaseUpdate = {
 export async function fetchCases(params?: {
   archived?: 'false' | 'true' | 'all'
   page?: number
+  query?: string | undefined
 }): Promise<CasePage> {
-  const query = new URLSearchParams()
-  if (params?.archived) query.set('archived', params.archived)
-  if (params?.page) query.set('page', String(params.page))
-  const qs = query.toString()
+  const q = new URLSearchParams()
+  if (params?.archived) q.set('archived', params.archived)
+  if (params?.page) q.set('page', String(params.page))
+  if (params?.query?.trim()) q.set('query', params.query.trim())
+  const qs = q.toString()
   const res = await fetch(`/api/internal/cases${qs ? '?' + qs : ''}`)
   if (!res.ok) throw new Error('Failed to fetch cases')
   return res.json()
@@ -65,6 +67,12 @@ export async function updateCase(id: string, data: CaseUpdate): Promise<CaseItem
 export async function archiveCase(id: string): Promise<CaseItem> {
   const res = await fetch(`/api/internal/cases/${id}/archive`, { method: 'POST' })
   if (!res.ok) throw new Error('Failed to archive case')
+  return res.json()
+}
+
+export async function unarchiveCase(id: string): Promise<CaseItem> {
+  const res = await fetch(`/api/internal/cases/${id}/unarchive`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to unarchive case')
   return res.json()
 }
 

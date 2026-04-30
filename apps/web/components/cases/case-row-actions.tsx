@@ -2,20 +2,23 @@
 
 import { useState } from 'react'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
-import { MoreHorizontal, Archive, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Archive, ArchiveRestore, Pencil, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
-import { archiveCase, deleteCase, type CaseItem } from '@/lib/api/cases'
+import { CaseFormDialog } from './case-form-dialog'
+import { archiveCase, unarchiveCase, deleteCase, type CaseItem } from '@/lib/api/cases'
 import { toast } from 'sonner'
 
 export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
   const qc = useQueryClient()
+  const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   const archiveMut = useMutation({
@@ -27,6 +30,15 @@ export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
     onError: () => toast.error("Erreur lors de l'archivage"),
   })
 
+  const unarchiveMut = useMutation({
+    mutationFn: () => unarchiveCase(caseItem.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cases'] })
+      toast.success('Dossier désarchivé')
+    },
+    onError: () => toast.error('Erreur lors du désarchivage'),
+  })
+
   const deleteMut = useMutation({
     mutationFn: () => deleteCase(caseItem.id),
     onSuccess: () => {
@@ -35,6 +47,8 @@ export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
     },
     onError: () => toast.error('Erreur lors de la suppression'),
   })
+
+  const isArchived = !!caseItem.archived_at
 
   return (
     <>
@@ -46,7 +60,19 @@ export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {!caseItem.archived_at && (
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Modifier
+          </DropdownMenuItem>
+          {isArchived ? (
+            <DropdownMenuItem
+              onClick={() => unarchiveMut.mutate()}
+              disabled={unarchiveMut.isPending}
+            >
+              <ArchiveRestore className="mr-2 h-4 w-4" />
+              Désarchiver
+            </DropdownMenuItem>
+          ) : (
             <DropdownMenuItem
               onClick={() => archiveMut.mutate()}
               disabled={archiveMut.isPending}
@@ -55,6 +81,7 @@ export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
               Archiver
             </DropdownMenuItem>
           )}
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => setDeleteOpen(true)}
             className="text-destructive focus:text-destructive"
@@ -64,6 +91,13 @@ export function CaseRowActions({ caseItem }: { caseItem: CaseItem }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <CaseFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        mode="edit"
+        initialValues={caseItem}
+      />
 
       <ConfirmDialog
         open={deleteOpen}

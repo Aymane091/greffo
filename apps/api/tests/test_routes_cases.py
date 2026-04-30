@@ -250,3 +250,182 @@ async def test_audit_log_called_on_case_mutations(
         assert mock_log.call_count == 4
         actions = [call.args[0] for call in mock_log.call_args_list]
         assert actions == ["CREATE", "UPDATE", "ARCHIVE", "DELETE"]
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+async def test_list_cases_query_filters_by_name(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet Search")
+    db_session.add(org)
+    await db_session.flush()
+    for name in ("Affaire Dupont", "Dossier Martin", "Affaire Durand"):
+        db_session.add(Case(organization_id=org.id, name=name))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/v1/cases?query=dupont",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    names = [c["name"] for c in resp.json()["items"]]
+    assert names == ["Affaire Dupont"]
+
+
+async def test_list_cases_query_filters_by_reference(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet Search Ref")
+    db_session.add(org)
+    await db_session.flush()
+    db_session.add(Case(organization_id=org.id, name="Affaire X", reference="REF-2024"))
+    db_session.add(Case(organization_id=org.id, name="Affaire Y", reference="REF-2025"))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/v1/cases?query=2024",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["reference"] == "REF-2024"
+
+
+async def test_list_cases_query_case_insensitive(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet Case Insensitive")
+    db_session.add(org)
+    await db_session.flush()
+    db_session.add(Case(organization_id=org.id, name="AFFAIRE MAJUSCULE"))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/v1/cases?query=affaire",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
+
+
+# ── Unarchive ─────────────────────────────────────────────────────────────────
+
+async def test_unarchive_case(client: AsyncClient, db_session: AsyncSession) -> None:
+    from datetime import datetime, timezone
+
+    org = Organization(name="Cabinet Unarchive")
+    db_session.add(org)
+    await db_session.flush()
+    case = Case(
+        organization_id=org.id,
+        name="Dossier Archivé",
+        archived_at=datetime.now(timezone.utc),
+    )
+    db_session.add(case)
+    await db_session.flush()
+
+    resp = await client.post(
+        f"/api/v1/cases/{case.id}/unarchive",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["archived_at"] is None
+
+
+async def test_unarchive_logs_action(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    from datetime import datetime, timezone
+
+    org = Organization(name="Cabinet Unarchive Log")
+    db_session.add(org)
+    await db_session.flush()
+    case = Case(
+        organization_id=org.id,
+        name="Dossier Log",
+        archived_at=datetime.now(timezone.utc),
+    )
+    db_session.add(case)
+    await db_session.flush()
+
+    with patch("src.routes.cases.log_action", new_callable=AsyncMock) as mock_log:
+        resp = await client.post(
+            f"/api/v1/cases/{case.id}/unarchive",
+            headers={"X-Org-Id": org.id},
+        )
+        assert resp.status_code == 200
+        mock_log.assert_called_once()
+        assert mock_log.call_args.args[0] == "UNARCHIVE"
+
+
+# ── Transcriptions sub-route ──────────────────────────────────────────────────
+
+async def test_list_case_transcriptions_empty(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet TR Empty")
+    db_session.add(org)
+    await db_session.flush()
+    case = Case(organization_id=org.id, name="Dossier TR")
+    db_session.add(case)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/api/v1/cases/{case.id}/transcriptions",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["total"] == 0
+
+
+async def test_list_case_transcriptions_isolation(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Transcriptions from another case are not returned."""
+    from src.models.transcription import Transcription
+    from src.models.user import User
+
+    org = Organization(name="Cabinet TR Isolation")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email=f"tr-iso-{org.id}@test.fr",
+                email_hash=f"h{org.id}", role="owner")
+    db_session.add(user)
+    case_a = Case(organization_id=org.id, name="Case A")
+    case_b = Case(organization_id=org.id, name="Case B")
+    db_session.add_all([case_a, case_b])
+    await db_session.flush()
+
+    db_session.add(Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case_b.id,
+        title="TR in B", status="done", language="fr", audio_s3_key="kb",
+    ))
+    await db_session.flush()
+
+    resp = await client.get(
+        f"/api/v1/cases/{case_a.id}/transcriptions",
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+# ── Validation min_length=3 ───────────────────────────────────────────────────
+
+async def test_create_case_name_too_short(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet MinLen")
+    db_session.add(org)
+    await db_session.flush()
+
+    resp = await client.post(
+        "/api/v1/cases",
+        json={"name": "AB"},
+        headers={"X-Org-Id": org.id},
+    )
+    assert resp.status_code == 422

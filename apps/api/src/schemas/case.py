@@ -11,9 +11,9 @@ class ArchivedFilter(str, Enum):
 
 
 class CaseCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=200)
+    name: str = Field(min_length=3, max_length=200)
     reference: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=500)
 
 
 class CaseRead(BaseModel):
@@ -30,6 +30,6 @@ class CaseRead(BaseModel):
 
 
 class CaseUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=200)
+    name: str | None = Field(default=None, min_length=3, max_length=200)
     reference: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=500)

@@ -364,5 +364,41 @@ Avant chaque PR mergé en main :
 
 ---
 
-**Dernière mise à jour** : 22/04/2026
+---
+
+## 14. Definition of Done par ticket
+
+Un ticket est **done** si et seulement si les conditions suivantes sont toutes remplies. Ne pas merger sans les avoir cochées.
+
+### Checklist obligatoire avant de marquer un ticket "done"
+
+**Couverture spec**
+- [ ] Relire la spec point par point et vérifier que chaque point est implémenté
+- [ ] Tout point délibérément reporté (pas faisable, hors scope) est mentionné **explicitement** dans le résumé du commit avec la raison
+- [ ] Aucun point silencieusement omis
+
+**Tests**
+- [ ] Tests unitaires/intégration passent (`pnpm test` + `uv run pytest`)
+- [ ] Les nouveaux comportements ont des tests dédiés
+- [ ] Les tests existants impactés par les changements sont mis à jour
+
+**Smoke test interactif dans le navigateur** (obligatoire, pas substituable par les tests unitaires)
+- [ ] Le golden path de la feature est testé manuellement dans un vrai navigateur
+- [ ] Les edge cases visibles (champ vide, erreur réseau, état vide) sont vérifiés
+- [ ] Aucune régression visible sur les features existantes
+
+**Commit message**
+- [ ] Liste explicite de ce qui a été **testé manuellement** (actions cliquées, résultats observés)
+- [ ] Mention des points reportés s'il y en a
+- [ ] Format : `feat|fix|refactor(scope): description` suivi du détail
+
+**Code quality**
+- [ ] `tsc --noEmit` sans erreurs dans les fichiers touchés
+- [ ] `ruff check` et `ruff format` propres côté API
+- [ ] Pas de `console.log` / `print` oubliés
+- [ ] Pas de secret en clair
+
+---
+
+**Dernière mise à jour** : 30/04/2026
 **Responsable du projet** : Aymane ABCHIR

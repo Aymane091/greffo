@@ -15,8 +15,9 @@ vi.mock('next/link', () => ({
 }))
 
 vi.mock('next/navigation', () => ({
-  useRouter: vi.fn(),
+  useRouter: vi.fn(() => ({ push: vi.fn() })),
   usePathname: vi.fn(() => '/cases'),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
 }))
 
 vi.mock('date-fns', () => ({
@@ -77,6 +78,21 @@ describe('CasesTable', () => {
   it('shows empty state for archived tab', () => {
     wrap(<CasesTable initialData={emptyPage} archived="true" />)
     expect(screen.getByText('Aucun dossier archivé.')).toBeDefined()
+  })
+
+  it('shows no-results empty state with query', () => {
+    // CasesTable ignores initialData when query is set — pass it explicitly
+    // to skip the loading state in tests (no network available)
+    const emptyWithQuery: CasePage = { ...emptyPage }
+    // We provide initialData via the queryClient cache directly
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(['cases', { archived: 'false', query: 'xyz' }], emptyWithQuery)
+    const { getByText } = render(
+      <QueryClientProvider client={client}>
+        <CasesTable archived="false" query="xyz" />
+      </QueryClientProvider>,
+    )
+    expect(getByText(/xyz/)).toBeDefined()
   })
 
   it('renders case rows with name and reference', () => {

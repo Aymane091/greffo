@@ -6,7 +6,8 @@ from src.db import get_db
 from src.models.case import Case
 from src.models.organization import Organization
 from src.schemas.case import ArchivedFilter, CaseCreate, CaseRead, CaseUpdate
-from src.services import case_service
+from src.schemas.transcription import TranscriptionRead
+from src.services import case_service, transcription_service
 from src.services.audit import log_action
 from src.utils.pagination import Page
 
@@ -30,10 +31,11 @@ async def list_cases(
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
     archived: ArchivedFilter = Query(ArchivedFilter.false),
+    query: str | None = Query(None, max_length=200),
     org: Organization = Depends(get_current_org),
     db: AsyncSession = Depends(get_db),
 ) -> Page[CaseRead]:
-    items, total = await case_service.list_cases(db, org.id, page, size, archived)
+    items, total = await case_service.list_cases(db, org.id, page, size, archived, query)
     return Page.build(items, total, page, size)  # type: ignore[return-value]
 
 
@@ -73,6 +75,19 @@ async def archive_case(
     return case
 
 
+@router.post("/{case_id}/unarchive", response_model=CaseRead)
+async def unarchive_case(
+    case_id: str,
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+) -> Case:
+    case = await case_service.get_case_or_404(db, case_id, org.id)
+    case = await case_service.unarchive_case(db, case)
+    await db.commit()
+    await log_action("UNARCHIVE", "case", case.id, org.id)
+    return case
+
+
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_case(
     case_id: str,
@@ -84,3 +99,19 @@ async def delete_case(
     await case_service.soft_delete_case(db, case)
     await db.commit()
     await log_action("DELETE", "case", case_id_for_log, org.id)
+
+
+@router.get("/{case_id}/transcriptions", response_model=Page[TranscriptionRead])
+async def list_case_transcriptions(
+    case_id: str,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=100),
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+) -> Page[TranscriptionRead]:
+    await case_service.get_case_or_404(db, case_id, org.id)
+    items, total = await transcription_service.list_transcriptions(
+        db, org.id, page, size,
+        case_id=case_id, status_filter=None, from_date=None, to_date=None,
+    )
+    return Page.build(items, total, page, size)  # type: ignore[return-value]

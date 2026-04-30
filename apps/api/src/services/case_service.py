@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.case import Case
@@ -40,6 +40,7 @@ async def list_cases(
     page: int,
     size: int,
     archived: ArchivedFilter,
+    query: str | None = None,
 ) -> tuple[list[Case], int]:
     base_q = select(Case).where(
         Case.organization_id == org_id,
@@ -50,6 +51,14 @@ async def list_cases(
     elif archived == ArchivedFilter.true:
         base_q = base_q.where(Case.archived_at.isnot(None))
     # ArchivedFilter.all : pas de filtre supplémentaire
+    if query:
+        pattern = f"%{query}%"
+        base_q = base_q.where(
+            or_(
+                Case.name.ilike(pattern),
+                Case.reference.ilike(pattern),
+            )
+        )
 
     total: int = (
         await db.execute(select(func.count()).select_from(base_q.subquery()))
@@ -77,6 +86,12 @@ async def update_case(db: AsyncSession, case: Case, payload: CaseUpdate) -> Case
 
 async def archive_case(db: AsyncSession, case: Case) -> Case:
     case.archived_at = datetime.now(timezone.utc)
+    await db.flush()
+    return case
+
+
+async def unarchive_case(db: AsyncSession, case: Case) -> Case:
+    case.archived_at = None
     await db.flush()
     return case
 

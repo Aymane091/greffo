@@ -20,13 +20,14 @@ import { RelativeDate } from '@/components/shared/relative-date'
 interface Props {
   initialData?: CasePage | undefined
   archived?: 'false' | 'true' | 'all'
+  query?: string | undefined
 }
 
-export function CasesTable({ initialData, archived = 'false' }: Props) {
+export function CasesTable({ initialData, archived = 'false', query }: Props) {
   const { data, isLoading } = useQuery({
-    queryKey: ['cases', { archived }],
-    queryFn: () => fetchCases({ archived }),
-    initialData,
+    queryKey: ['cases', { archived, query }],
+    queryFn: () => fetchCases({ archived, query }),
+    initialData: !query ? initialData : undefined,
     staleTime: 30_000,
   })
 
@@ -47,9 +48,13 @@ export function CasesTable({ initialData, archived = 'false' }: Props) {
       <EmptyState
         title="Aucun dossier"
         description={
-          archived === 'false'
-            ? 'Créez votre premier dossier pour commencer.'
-            : 'Aucun dossier archivé.'
+          query
+            ? `Aucun résultat pour « ${query} ».`
+            : archived === 'false'
+              ? 'Créez votre premier dossier pour commencer.'
+              : archived === 'true'
+                ? 'Aucun dossier archivé.'
+                : 'Aucun dossier.'
         }
       />
     )
