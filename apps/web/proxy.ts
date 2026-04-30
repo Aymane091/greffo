@@ -17,5 +17,5 @@ export const proxy = handler
 export default handler
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/cases/:path*'],
 }

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.auth.tenant import TenantMiddleware
 from src.config import settings
-from src.routes import cases, health, organizations, storage, transcriptions
+from src.routes import cases, health, organizations, stats, storage, transcriptions
 
 logger = logging.getLogger("greffo.main")
 
@@ -70,3 +70,4 @@ app.include_router(organizations.router, prefix="/api/v1")
 app.include_router(cases.router, prefix="/api/v1")
 app.include_router(transcriptions.router, prefix="/api/v1")
 app.include_router(storage.router, prefix="/api/v1")
+app.include_router(stats.router, prefix="/api/v1")

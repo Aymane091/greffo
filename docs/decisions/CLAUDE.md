@@ -6,7 +6,7 @@
 
 ## 1. Contexte projet
 
-**Nom du produit** : [À définir — ex: Plaida, Transcrilex, Audiencia]
+**Nom du produit** : [ Greffo ]
 
 **Type** : SaaS B2B de transcription audio spécialisé pour les professionnels du droit (avocats, notaires, commissaires de justice).
 
@@ -25,7 +25,7 @@
 ## 2. Stack technique
 
 ### Frontend
-- **Framework** : Next.js 15 (App Router) + React 19
+- **Framework** : Next.js 16 (App Router) + React 19
 - **Langage** : TypeScript (strict mode)
 - **Styling** : Tailwind CSS v4 + shadcn/ui
 - **Forms** : React Hook Form + Zod validation
@@ -344,5 +344,12 @@ Avant chaque PR mergé en main :
 
 ---
 
-**Dernière mise à jour** : [date de la dernière modif]
-**Responsable du projet** : [ton nom]
+## Avant de commiter un ticket "auth", "front", ou "API"
+1. Run unit tests
+2. Run smoke test E2E manuel (parcours utilisateur réel dans le navigateur)
+3. Décris dans le commit ce qui a été testé manuellement
+
+---
+
+**Dernière mise à jour** : [ 22/04/2026 ]
+**Responsable du projet** : [Aymane ABCHIR]

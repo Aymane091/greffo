@@ -4,8 +4,8 @@
   "version": "0.0.1",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev":        "concurrently -n api,worker,web -c blue,yellow,green \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm dev:web\"",
-    "dev:web":    "pnpm --filter web dev",
+    "dev":        "concurrently -n api,worker,web -c blue,yellow,green \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:web\"",
+    "dev:web":    "cd apps/web && node_modules/.bin/next dev",
     "dev:api":    "cd apps/api && /Users/aymaneabchir/.local/bin/uv run uvicorn src.main:app --reload --port 8000",
     "dev:worker": "cd apps/api && /Users/aymaneabchir/.local/bin/uv run arq src.workers.WorkerSettings",
     "build":      "pnpm --filter web build",
