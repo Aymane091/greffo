@@ -6,6 +6,7 @@ from src.models.case import Case
 from src.models.organization import Organization
 from src.models.transcription import Transcription
 from src.models.user import User
+from tests.conftest import FakeRedis
 
 
 def _h(org_id: str, user_id: str | None = None) -> dict[str, str]:
@@ -246,7 +247,7 @@ async def test_patch_transcription_title_and_case(
 
 
 async def test_soft_delete_transcription(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, tmp_storage
 ) -> None:
     org = Organization(name="Cabinet Tr Delete")
     db_session.add(org)
@@ -311,3 +312,156 @@ async def test_user_from_other_org_returns_401(
         headers={"X-Org-Id": org_a.id, "X-User-Id": user_b.id},
     )
     assert response.status_code == 401
+
+
+# ── Audio stream ──────────────────────────────────────────────────────────────
+
+async def test_stream_audio_returns_200_with_content_type(
+    client: AsyncClient, db_session: AsyncSession, tmp_storage
+) -> None:
+    org = Organization(name="Cabinet Audio OK")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email="audioOK@cabinet.fr", email_hash="haudioOK", role="member")
+    case = Case(organization_id=org.id, name="Dossier Audio OK")
+    db_session.add_all([user, case])
+    await db_session.flush()
+    tr = Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case.id,
+        title="Audio Test", status="done", language="fr",
+        audio_s3_key="audio/tr-audio-ok", audio_format="mp3",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+    await tmp_storage.upload("audio/tr-audio-ok", b"ID3fake-mp3-bytes", "audio/mpeg")
+
+    response = await client.get(f"/api/v1/transcriptions/{tr.id}/audio", headers=_h(org.id))
+    assert response.status_code == 200
+    assert "audio" in response.headers["content-type"]
+
+
+async def test_stream_audio_404_when_no_audio_key(
+    client: AsyncClient, db_session: AsyncSession, tmp_storage
+) -> None:
+    org = Organization(name="Cabinet Audio NoKey")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email="audioNK@cabinet.fr", email_hash="haudioNK", role="member")
+    case = Case(organization_id=org.id, name="Dossier Audio NK")
+    db_session.add_all([user, case])
+    await db_session.flush()
+    tr = Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case.id,
+        title="No Audio", status="draft", language="fr",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+
+    response = await client.get(f"/api/v1/transcriptions/{tr.id}/audio", headers=_h(org.id))
+    assert response.status_code == 404
+    assert response.json()["detail"] == "audio_not_found"
+
+
+async def test_stream_audio_404_for_other_org(
+    client: AsyncClient, db_session: AsyncSession, tmp_storage
+) -> None:
+    org_a = Organization(name="Cabinet Audio Org A")
+    org_b = Organization(name="Cabinet Audio Org B")
+    db_session.add_all([org_a, org_b])
+    await db_session.flush()
+    user_a = User(organization_id=org_a.id, email="audioA@cabinet.fr", email_hash="haudioA", role="member")
+    case_a = Case(organization_id=org_a.id, name="Dossier Audio A")
+    db_session.add_all([user_a, case_a])
+    await db_session.flush()
+    tr = Transcription(
+        organization_id=org_a.id, user_id=user_a.id, case_id=case_a.id,
+        title="Audio Org A", status="done", language="fr",
+        audio_s3_key="audio/org-a-audio", audio_format="mp3",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+    await tmp_storage.upload("audio/org-a-audio", b"bytes", "audio/mpeg")
+
+    response = await client.get(f"/api/v1/transcriptions/{tr.id}/audio", headers=_h(org_b.id))
+    assert response.status_code == 404
+
+
+# ── Retry ─────────────────────────────────────────────────────────────────────
+
+async def test_retry_transcription_from_failed(
+    client: AsyncClient, db_session: AsyncSession, fake_redis: FakeRedis
+) -> None:
+    org = Organization(name="Cabinet Retry")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email="retry@cabinet.fr", email_hash="hretry", role="member")
+    case = Case(organization_id=org.id, name="Dossier Retry")
+    db_session.add_all([user, case])
+    await db_session.flush()
+    tr = Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case.id,
+        title="Failed Tr", status="failed", language="fr",
+        error_code="network_error", error_message="Connection refused",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+
+    response = await client.post(f"/api/v1/transcriptions/{tr.id}/retry", headers=_h(org.id))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "queued"
+    assert data["error_code"] is None
+    assert data["error_message"] is None
+    assert any(j["fn"] == "process_transcription" and j["transcription_id"] == tr.id for j in fake_redis.enqueued)
+
+
+async def test_retry_non_failed_returns_409(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    org = Organization(name="Cabinet Retry 409")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email="retry409@cabinet.fr", email_hash="hretry409", role="member")
+    case = Case(organization_id=org.id, name="Dossier Retry 409")
+    db_session.add_all([user, case])
+    await db_session.flush()
+    tr = Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case.id,
+        title="Done Tr", status="done", language="fr",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+
+    response = await client.post(f"/api/v1/transcriptions/{tr.id}/retry", headers=_h(org.id))
+    assert response.status_code == 409
+    assert "can_only_retry_failed" in response.json()["detail"]
+
+
+# ── Delete + storage cleanup ──────────────────────────────────────────────────
+
+async def test_delete_transcription_removes_audio_file(
+    client: AsyncClient, db_session: AsyncSession, tmp_storage
+) -> None:
+    org = Organization(name="Cabinet Del Audio")
+    db_session.add(org)
+    await db_session.flush()
+    user = User(organization_id=org.id, email="delaudio@cabinet.fr", email_hash="hdelaudio", role="member")
+    case = Case(organization_id=org.id, name="Dossier Del Audio")
+    db_session.add_all([user, case])
+    await db_session.flush()
+
+    audio_key = "audio/del-test-id"
+    await tmp_storage.upload(audio_key, b"audio-bytes", "audio/mpeg")
+    assert await tmp_storage.exists(audio_key)
+
+    tr = Transcription(
+        organization_id=org.id, user_id=user.id, case_id=case.id,
+        title="À Supprimer Avec Audio", status="done", language="fr",
+        audio_s3_key=audio_key, audio_format="mp3",
+    )
+    db_session.add(tr)
+    await db_session.flush()
+
+    response = await client.delete(f"/api/v1/transcriptions/{tr.id}", headers=_h(org.id))
+    assert response.status_code == 204
+    assert not await tmp_storage.exists(audio_key)

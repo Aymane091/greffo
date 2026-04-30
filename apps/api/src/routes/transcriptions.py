@@ -1,6 +1,8 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.tenant import get_current_org
@@ -18,9 +20,22 @@ from src.schemas.transcription import (
 from src.services import transcription_service
 from src.services.audit import log_action
 from src.services.storage_token import generate_upload_token
+from src.storage import StorageBackend, get_storage
 from src.utils.pagination import Page
 
+logger = logging.getLogger("greffo.transcriptions")
+
 router = APIRouter(prefix="/transcriptions", tags=["transcriptions"])
+
+_FORMAT_TO_MIME: dict[str, str] = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "m4a": "audio/mp4",
+    "ogg": "audio/ogg",
+    "flac": "audio/flac",
+    "opus": "audio/ogg",
+    "mp4": "audio/mp4",
+}
 
 
 @router.post("", response_model=TranscriptionRead, status_code=status.HTTP_201_CREATED)
@@ -85,12 +100,66 @@ async def delete_transcription(
     tr_id: str,
     org: Organization = Depends(get_current_org),
     db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
 ) -> None:
     tr = await transcription_service.get_transcription_or_404(db, tr_id, org.id)
     tr_id_for_log = tr.id
+
+    if tr.audio_s3_key:
+        try:
+            await storage.delete(tr.audio_s3_key)
+        except Exception:
+            logger.warning("Could not delete audio file for transcription %s", tr_id_for_log)
+
     await transcription_service.soft_delete_transcription(db, tr)
     await db.commit()
     await log_action("DELETE", "transcription", tr_id_for_log, org.id)
+
+
+@router.get("/{tr_id}/audio")
+async def stream_audio(
+    tr_id: str,
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage),
+) -> FileResponse:
+    tr = await transcription_service.get_transcription_or_404(db, tr_id, org.id)
+
+    if not tr.audio_s3_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio_not_found")
+
+    path = storage.get_path(tr.audio_s3_key)
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="audio_file_missing")
+
+    media_type = _FORMAT_TO_MIME.get(tr.audio_format or "", "audio/mpeg")
+    return FileResponse(path, media_type=media_type)
+
+
+@router.post("/{tr_id}/retry", response_model=TranscriptionRead)
+async def retry_transcription(
+    tr_id: str,
+    org: Organization = Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+    redis: object = Depends(get_redis),
+) -> Transcription:
+    tr = await transcription_service.get_transcription_or_404(db, tr_id, org.id)
+
+    if tr.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="can_only_retry_failed_transcription",
+        )
+
+    tr.status = "queued"
+    tr.error_code = None
+    tr.error_message = None
+    await db.commit()
+    await log_action("RETRY", "transcription", tr.id, org.id)
+
+    await redis.enqueue_job("process_transcription", transcription_id=tr.id)  # type: ignore[union-attr]
+
+    return tr
 
 
 @router.post("/{tr_id}/upload-url", response_model=UploadUrlResponse)

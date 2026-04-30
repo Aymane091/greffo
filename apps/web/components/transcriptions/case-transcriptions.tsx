@@ -9,11 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { RelativeDate } from '@/components/shared/relative-date'
 import { TranscriptionStatusBadge } from './transcription-status-badge'
+import { UploadDialog } from './upload-dialog'
 import Link from 'next/link'
 import { fetchCaseTranscriptions, type TranscriptionPage } from '@/lib/api/transcriptions'
 import { formatDuration } from '@/lib/format'
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function CaseTranscriptions({ caseId, initialData }: Props) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['case-transcriptions', caseId],
     queryFn: () => fetchCaseTranscriptions(caseId),
     initialData,
@@ -41,11 +41,7 @@ export function CaseTranscriptions({ caseId, initialData }: Props) {
           Transcriptions{' '}
           <span className="text-sm font-normal text-muted-foreground">({total})</span>
         </h2>
-        <span title="Bientôt disponible — Ticket 13b">
-          <Button size="sm" disabled aria-label="Nouvelle transcription (bientôt disponible)">
-            Nouvelle transcription
-          </Button>
-        </span>
+        <UploadDialog caseId={caseId} onSuccess={() => refetch()} />
       </div>
 
       {isLoading && !data ? (

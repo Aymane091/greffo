@@ -6,3 +6,8 @@ export async function GET(req: Request, { params }: Params) {
   const { id } = await params
   return proxyToApi(req, `/api/v1/transcriptions/${id}`)
 }
+
+export async function DELETE(req: Request, { params }: Params) {
+  const { id } = await params
+  return proxyToApi(req, `/api/v1/transcriptions/${id}`, { method: 'DELETE' })
+}
