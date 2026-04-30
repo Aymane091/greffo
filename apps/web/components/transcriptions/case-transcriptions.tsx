@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/shared/empty-state'
 import { RelativeDate } from '@/components/shared/relative-date'
 import { TranscriptionStatusBadge } from './transcription-status-badge'
+import Link from 'next/link'
 import { fetchCaseTranscriptions, type TranscriptionPage } from '@/lib/api/transcriptions'
 import { formatDuration } from '@/lib/format'
 
@@ -68,7 +69,11 @@ export function CaseTranscriptions({ caseId, initialData }: Props) {
           <TableBody>
             {items.map((tr) => (
               <TableRow key={tr.id} className="cursor-pointer hover:bg-muted/50">
-                <TableCell className="font-medium">{tr.title ?? '—'}</TableCell>
+                <TableCell className="font-medium">
+                  <Link href={`/transcriptions/${tr.id}`} className="hover:underline">
+                    {tr.title ?? '—'}
+                  </Link>
+                </TableCell>
                 <TableCell>
                   <TranscriptionStatusBadge status={tr.status} />
                 </TableCell>
